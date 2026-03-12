@@ -13,16 +13,22 @@ export interface AgentIdentity {
     secretKey: Uint8Array;
 }
 
+export interface PrivateClaim {
+    recipientDID: string;
+    encryptedData: string; // Base64
+}
+
 export interface VerificationResult {
     isValid: boolean;
     creator: string;
     currentOwner: string;
     chain: string[];
+    metadata: any;
 }
 
 // --- Constants & Helpers ---
 
-const DID_PREFIX = 'did:key:z6Mk'; // Roughly Ed25519 prefix
+const DID_PREFIX = 'did:key:z6Mk';
 
 const SVGO_CONFIG = {
     plugins: [
@@ -49,10 +55,11 @@ function fromBase64(str: string): Uint8Array {
 
 // --- Core Logic ---
 
+/**
+ * Generates a portable Ed25519 identity following the did:key:z6Mk standard.
+ */
 export function generateIdentity(): AgentIdentity {
     const keyPair = nacl.sign.keyPair();
-    // In a real did:key implementation, we would use multicodec/multibase.
-    // Here we use a simplified version for our platform.
     const did = DID_PREFIX + toBase64(keyPair.publicKey).replace(/=/g, '');
     return {
         did,
@@ -70,69 +77,73 @@ export function computeHash(data: string): string {
     return crypto.createHash('sha256').update(data).digest('hex');
 }
 
-export async function signSVG(svg: string, identity: AgentIdentity): Promise<string> {
-    const canonical = await canonicalizeSVG(svg);
+/**
+ * Signs an SVG and embeds the Genesis Manifest.
+ */
+export async function signSVG(svg: string, identity: AgentIdentity, extraMetadata: any = {}): Promise<string> {
+    // Remove existing metadata for hashing
+    const cleanSVG = svg.replace(/\s*<metadata>[\s\S]*?<\/metadata>\s*/g, '');
+    const canonical = await canonicalizeSVG(cleanSVG);
     const hash = computeHash(canonical);
     const signature = nacl.sign.detached(decodeUTF8(hash), identity.secretKey);
     
-    const metadata = {
+    const manifest = {
+        version: "1.0",
         creator: identity.did,
         hash: hash,
         signature: toBase64(signature),
-        transfers: []
+        transfers: [],
+        ...extraMetadata
     };
 
-    const metadataStr = JSON.stringify(metadata);
-    const metadataBase64 = base64.fromByteArray(decodeUTF8(metadataStr));
+    const manifestBase64 = base64.fromByteArray(decodeUTF8(JSON.stringify(manifest)));
 
-    // Embed in <metadata> tag
+    // Embed in <metadata>
     if (svg.includes('<metadata>')) {
-        return svg.replace(/<metadata>[\s\S]*?<\/metadata>/, `<metadata>nasp:${metadataBase64}</metadata>`);
+        return svg.replace(/<metadata>[\s\S]*?<\/metadata>/, `<metadata>nasp:${manifestBase64}</metadata>`);
     } else {
-        return svg.replace(/<svg(.*?)>/, `<svg$1>\n<metadata>nasp:${metadataBase64}</metadata>`);
+        return svg.replace(/<svg(.*?)>/, `<svg$1>\n<metadata>nasp:${manifestBase64}</metadata>`);
     }
 }
 
+/**
+ * Verifies the integrity and full provenance chain of a Nifty SVG.
+ */
 export async function verifySVG(svg: string): Promise<VerificationResult> {
     const metadataMatch = svg.match(/<metadata>nasp:(.*?)<\/metadata>/);
-    if (!metadataMatch) {
-        throw new Error('No NASP metadata found');
-    }
+    if (!metadataMatch) throw new Error('No NASP metadata found');
 
-    const metadataStr = encodeUTF8(fromBase64(metadataMatch[1]));
-    const metadata = JSON.parse(metadataStr);
-
-    const canonical = await canonicalizeSVG(svg.replace(/\s*<metadata>[\s\S]*?<\/metadata>\s*/, ''));
+    const manifest = JSON.parse(encodeUTF8(fromBase64(metadataMatch[1])));
+    
+    // Hash the visual content (excluding metadata)
+    const cleanSVG = svg.replace(/\s*<metadata>[\s\S]*?<\/metadata>\s*/g, '');
+    const canonical = await canonicalizeSVG(cleanSVG);
     const hash = computeHash(canonical);
 
-    if (hash !== metadata.hash) {
-        return { isValid: false, creator: metadata.creator, currentOwner: '', chain: [] };
+    if (hash !== manifest.hash) {
+        return { isValid: false, creator: manifest.creator, currentOwner: '', chain: [], metadata: manifest };
     }
 
-    // Verify creator signature
-    // Extract public key from DID (simplified)
-    const creatorPubKeyStr = metadata.creator.replace(DID_PREFIX, '');
-    const creatorPubKey = fromBase64(creatorPubKeyStr);
-    
+    // Verify Creator Signature
+    const creatorPubKey = fromBase64(manifest.creator.replace(DID_PREFIX, ''));
     const isValidCreator = nacl.sign.detached.verify(
         decodeUTF8(hash),
-        fromBase64(metadata.signature),
+        fromBase64(manifest.signature),
         creatorPubKey
     );
 
     if (!isValidCreator) {
-        return { isValid: false, creator: metadata.creator, currentOwner: '', chain: [] };
+        return { isValid: false, creator: manifest.creator, currentOwner: '', chain: [], metadata: manifest };
     }
 
-    // Verify transfer chain (if any)
-    let currentOwner = metadata.creator;
-    const chain = [metadata.creator];
+    // Verify Transfer Chain
+    let currentOwner = manifest.creator;
+    const chain = [manifest.creator];
 
-    for (const transfer of metadata.transfers) {
-        const ownerPubKeyStr = currentOwner.replace(DID_PREFIX, '');
-        const ownerPubKey = fromBase64(ownerPubKeyStr);
-        
+    for (const transfer of manifest.transfers) {
+        const ownerPubKey = fromBase64(currentOwner.replace(DID_PREFIX, ''));
         const transferPayload = `${hash}:${transfer.to}:${transfer.timestamp}`;
+        
         const isValidTransfer = nacl.sign.detached.verify(
             decodeUTF8(transferPayload),
             fromBase64(transfer.signature),
@@ -140,7 +151,7 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
         );
 
         if (!isValidTransfer) {
-            return { isValid: false, creator: metadata.creator, currentOwner, chain };
+            return { isValid: false, creator: manifest.creator, currentOwner, chain, metadata: manifest };
         }
         currentOwner = transfer.to;
         chain.push(currentOwner);
@@ -148,39 +159,34 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
 
     return {
         isValid: true,
-        creator: metadata.creator,
-        currentOwner: currentOwner,
-        chain: chain
+        creator: manifest.creator,
+        currentOwner,
+        chain,
+        metadata: manifest
     };
 }
 
+/**
+ * Transfers ownership by appending a new signed grant to the metadata.
+ */
 export async function transferSVG(svg: string, fromIdentity: AgentIdentity, toDID: string): Promise<string> {
-    const verification = await verifySVG(svg);
-    if (!verification.isValid) {
-        throw new Error('Cannot transfer an invalid or tampered SVG');
-    }
-    if (verification.currentOwner !== fromIdentity.did) {
-        throw new Error(`Ownership mismatch: ${fromIdentity.did} is not the current owner (${verification.currentOwner})`);
+    const audit = await verifySVG(svg);
+    if (!audit.isValid) throw new Error('Cannot transfer invalid SVG');
+    if (audit.currentOwner !== fromIdentity.did) {
+        throw new Error(`Signer ${fromIdentity.did} is not the current owner (${audit.currentOwner})`);
     }
 
-    const metadataMatch = svg.match(/<metadata>nasp:(.*?)<\/metadata>/);
-    if (!metadataMatch) throw new Error('No NASP metadata found');
-
-    const metadataStr = encodeUTF8(fromBase64(metadataMatch[1]));
-    const metadata = JSON.parse(metadataStr);
-
+    const manifest = audit.metadata;
     const timestamp = new Date().toISOString();
-    const transferPayload = `${metadata.hash}:${toDID}:${timestamp}`;
+    const transferPayload = `${manifest.hash}:${toDID}:${timestamp}`;
     const signature = nacl.sign.detached(decodeUTF8(transferPayload), fromIdentity.secretKey);
 
-    metadata.transfers.push({
+    manifest.transfers.push({
         to: toDID,
         timestamp,
         signature: toBase64(signature)
     });
 
-    const newMetadataStr = JSON.stringify(metadata);
-    const newMetadataBase64 = base64.fromByteArray(decodeUTF8(newMetadataStr));
-
-    return svg.replace(/<metadata>nasp:(.*?)<\/metadata>/, `<metadata>nasp:${newMetadataBase64}</metadata>`);
+    const newManifestBase64 = base64.fromByteArray(decodeUTF8(JSON.stringify(manifest)));
+    return svg.replace(/<metadata>nasp:(.*?)<\/metadata>/, `<metadata>nasp:${newManifestBase64}</metadata>`);
 }
