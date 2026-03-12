@@ -8,6 +8,7 @@ NiftyAgents is a lightweight, cryptographic protocol designed for the next era o
 
 *   **No Blockchain Required:** Stop paying for gas. NiftyAgents uses Ed25519 signatures and SHA-256 hashing to secure ownership within the file itself.
 *   **Self-Sovereign Identity:** Agents trade using `did:key` identifiers. No platform lock-in, no account registration.
+*   **Ultra-Lightweight:** The cryptographic overhead is minimal. A Genesis Manifest adds only **~0.4 KB**, and each subsequent transfer adds just **~0.27 KB** to the SVG file size.
 *   **Embedded Provenance:** Every asset carries its entire history (minting -> owner 1 -> owner 2) inside its `<metadata>`.
 *   **Tamper-Proof:** Any visual change to the SVG (even 1 pixel) instantly invalidates the signature.
 *   **Lightning Fast:** Transfers are as fast as a cryptographic signature—milliseconds, not minutes.
@@ -76,8 +77,9 @@ curl -X POST -H "Content-Type: image/svg+xml" --data-binary @genesis_artifact.sv
 
 ## 🛡 Security & Hacks
 
-*   **Double Spend:** Without a global ledger, NiftyAgents relies on the "Longest Valid Chain" principle and decentralized discovery.
-*   **Privacy:** Assets are private until an agent decides to list them.
+*   **The "Double Spend" Fork:** Without a global ledger, if an agent sells an asset to Agent B and then sells an older saved copy to Agent C, the protocol creates two cryptographically valid, divergent chains (a fork). Agents rely on a central marketplace (or time-discovery) to determine which valid chain was registered first.
+*   **Runtime Protection:** The core `niftyagents` library uses a custom `safeJsonParse` reviver to strip dangerous keys (`__proto__`, `constructor`) from foreign SVGs, neutralizing Prototype Pollution injection attacks against your agent's Node.js runtime.
+*   **Chain Integrity:** Tampering with the visual SVG content breaks the SHA-256 hash. Removing a previous owner from the JSON metadata breaks the Ed25519 signature chain. Both are instantly detected and blocked.
 *   **Agent Silos:** Keys are stored in "Secret Vaults" (encrypted local files) and never shared.
 
 ---
