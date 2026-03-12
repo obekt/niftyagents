@@ -1,39 +1,76 @@
-# Nifty Agent SVG Protocol (NASP)
+# 💎 Nifty Agent SVG Protocol (NASP) - Agent Skill Manual
 
-The Nifty Agent SVG Protocol (NASP) enables agents to create, sign, and trade SVGs with verifiable provenance and ownership without a central registry or blockchain.
+NASP is a cryptographic protocol for creating, signing, and trading SVGs with verifiable provenance—**without a blockchain.**
 
-## Identity
-Agents identify themselves using a **`did:key`** based on an Ed25519 public key.
-- **Protocol:** Ed25519
-- **Format:** `did:key:z6Mk[Base64_PublicKey]`
-- **Portability:** Any platform can derive the public key from this ID and verify signatures.
+## 🎯 Objective
+Use this skill to mint "Nifty" digital assets, verify their ownership, and securely transfer them to other agents using `did:key` identities.
 
-## SVG Creation & Signing
-1.  **Canonicalize:** Use `svgo` with the NASP profile (sort attributes, normalize paths) to ensure a deterministic SVG string.
-2.  **Hash:** Compute a SHA-256 hash of the canonicalized SVG (with the `<metadata>` tag removed).
-3.  **Sign:** Sign the hash using the agent's Ed25519 private key.
-4.  **Embed:** Add the signature and the creator's `did:key` into the SVG `<metadata>` as a `nasp:[Base64_JSON]` payload.
+## 🛠 Setup & Imports
+To use this skill in your environment:
+```typescript
+import { 
+  generateIdentity, 
+  signSVG, 
+  verifySVG, 
+  transferSVG 
+} from './index.js';
+```
 
-## Transfer Chain
-To transfer an SVG, the current owner signs a "Grant" object:
-```json
+## 📋 Data Structures
+
+### `AgentIdentity`
+```typescript
 {
-  "to": "did:key:B",
-  "timestamp": "2026-03-12T10:00:00Z",
-  "signature": "..."
+  did: string;        // e.g. "did:key:z6Mk..."
+  publicKey: Uint8Array;
+  secretKey: Uint8Array;
 }
 ```
-This grant is appended to the `transfers` array in the metadata, forming a verifiable chain of ownership.
 
-## Usage Guide for Agents
-The following functions are available in the `niftyagents` library:
+### `VerificationResult`
+```typescript
+{
+  isValid: boolean;     // Cryptographic integrity check
+  creator: string;      // DID of the original minter
+  currentOwner: string; // DID of the latest owner in the chain
+  chain: string[];      // Array of DIDs representing the full history
+}
+```
 
-- **`generateIdentity()`**: Returns a new Ed25519 keypair and its corresponding `did:key`.
-- **`signSVG(svg, identity)`**: Canonicalizes, hashes, and embeds the initial creator signature.
-- **`verifySVG(svg)`**: Re-canonicalizes and verifies the entire provenance chain. Returns `{ isValid, creator, currentOwner, chain }`.
-- **`transferSVG(svg, fromIdentity, toDID)`**: Verifies ownership and appends a new signed grant to the metadata.
+## 🕹 Usage Guide
 
-## Security Mandates
-- **Never share your Private Key.**
-- **Always verify the full chain** before accepting a transfer.
-- **Canonicalization is mandatory.** Small visual changes will break the cryptographic hash.
+### 1. Generate an Identity
+Call this once to create your agent's cryptographic persona. **Store the `secretKey` securely.**
+```typescript
+const myIdentity = generateIdentity();
+```
+
+### 2. Mint & Sign a New SVG
+Takes a raw SVG string and returns a "Nifty" SVG with embedded NASP metadata.
+```typescript
+const rawSVG = `<svg>...</svg>`;
+const signedSVG = await signSVG(rawSVG, myIdentity);
+```
+
+### 3. Verify an Asset
+Always verify an SVG before accepting a trade or performing an action.
+```typescript
+const audit = await verifySVG(receivedSVG);
+if (audit.isValid) {
+  console.log(`Current Owner: ${audit.currentOwner}`);
+}
+```
+
+### 4. Transfer Ownership
+Appends a new signed grant to the metadata. This function **throws an error** if:
+- The SVG is invalid/tampered.
+- You (the signer) are not the `currentOwner` of the asset.
+```typescript
+const updatedSVG = await transferSVG(currentSVG, myIdentity, targetAgentDID);
+```
+
+## 🛡 Security Protocol for Agents
+1.  **Canonicalization:** The library automatically handles canonicalization using `svgo`. Do not manually edit the SVG content after signing, or the signature will break.
+2.  **Private Keys:** Never log, share, or expose your `secretKey`. Treat it as your agent's "soul."
+3.  **Audit First:** Never assume an SVG is valid based on its filename. Always run `verifySVG()`.
+4.  **Double Spend Detection:** In decentralized environments, if you are presented with two different valid chains for the same asset, the one with the **longest chain** or the **latest timestamp** is typically preferred.
