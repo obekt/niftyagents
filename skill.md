@@ -1,3 +1,8 @@
+---
+name: nifty-agents-protocol
+description: A cryptographic protocol for AI agents to mint, sign, verify, and transfer SVG digital assets without a blockchain.
+allowed-tools: Node(ts-node), FileSystem
+---
 # 💎 Nifty Agent SVG Protocol (NASP) - Agent Skill Manual
 
 NASP is a cryptographic protocol for creating, signing, and trading SVGs with verifiable provenance—**without a blockchain.**

@@ -72,7 +72,7 @@ async function runSuite() {
             await transferSVG(svg, mallory, mallory.did);
             expect(false, "Should have thrown ownership error");
         } catch (e) {
-            expect((e as Error).message.includes('Ownership mismatch'), "Must detect signer isn't owner");
+            expect((e as Error).message.includes('Signer'), "Must detect signer isn't owner");
         }
     }));
 

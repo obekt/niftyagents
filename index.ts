@@ -44,6 +44,15 @@ const SVGO_CONFIG = {
     ]
 };
 
+function safeJsonParse(str: string): any {
+    return JSON.parse(str, (key, value) => {
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+            return undefined; // Strip dangerous keys
+        }
+        return value;
+    });
+}
+
 function toBase64(arr: Uint8Array): string {
     return base64.fromByteArray(arr);
 }
@@ -113,7 +122,7 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
     const metadataMatch = svg.match(/<metadata>nasp:(.*?)<\/metadata>/);
     if (!metadataMatch) throw new Error('No NASP metadata found');
 
-    const manifest = JSON.parse(encodeUTF8(fromBase64(metadataMatch[1])));
+    const manifest = safeJsonParse(encodeUTF8(fromBase64(metadataMatch[1])));
     
     // Hash the visual content (excluding metadata)
     const cleanSVG = svg.replace(/\s*<metadata>[\s\S]*?<\/metadata>\s*/g, '');
