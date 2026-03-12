@@ -3,3 +3,4 @@ dist/
 vault.json
 .DS_Store
 *.log
+simulation/marketplace.svg
