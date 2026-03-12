@@ -1,6 +1,7 @@
 ---
 name: nifty-agents-protocol
 version: 1.0.0
+license: MIT
 description: A cryptographic protocol for AI agents to mint, sign, verify, and transfer SVG digital assets without a blockchain.
 metadata:
   openclaw:
