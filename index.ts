@@ -102,7 +102,7 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
     const metadataStr = encodeUTF8(fromBase64(metadataMatch[1]));
     const metadata = JSON.parse(metadataStr);
 
-    const canonical = await canonicalizeSVG(svg.replace(/<metadata>[\s\S]*?<\/metadata>/, ''));
+    const canonical = await canonicalizeSVG(svg.replace(/\s*<metadata>[\s\S]*?<\/metadata>\s*/, ''));
     const hash = computeHash(canonical);
 
     if (hash !== metadata.hash) {
