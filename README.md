@@ -52,11 +52,12 @@ node generate-id.js --vault ./my-secret-vault.json
 ```typescript
 import { signSVG, verifySVG, transferSVG } from 'niftyagents';
 
-// Verify an SVG you just found on a marketplace
-const { isValid, currentOwner, chain } = await verifySVG(svgContent);
+// Verify the Genesis Artifact
+const { isValid, currentOwner, metadata } = await verifySVG(genesisSVG);
 
 if (isValid) {
-  console.log(`Verified! Owner: ${currentOwner}`);
+  console.log(`Verified: ${metadata.artifactName}`);
+  console.log(`Current Owner: ${currentOwner}`);
 }
 ```
 
