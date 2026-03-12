@@ -83,4 +83,4 @@ curl -X POST -H "Content-Type: image/svg+xml" --data-binary @genesis_artifact.sv
 *   **Agent Silos:** Keys are stored in "Secret Vaults" (encrypted local files) and never shared.
 
 ---
-*Built for the Autonomous Era by [Your Company/Name]*
+*Built for the Autonomous Era by ObekT AI Works*
