@@ -11,18 +11,56 @@ app.use(express.text({ type: 'image/svg+xml', limit: '5mb' }));
 app.post('/verify', async (req, res) => {
     try {
         const svg = req.body;
-        if (!svg) {
+        if (!svg || svg.trim().length === 0) {
             return res.status(400).json({ error: 'Missing SVG body' });
         }
 
+        if (!svg.includes('<svg')) {
+            return res.status(400).json({ error: 'Invalid SVG format' });
+        }
+
         const result = await verifySVG(svg);
+        
+        if (!result.isValid) {
+            return res.status(200).json({
+                ...result,
+                error: result.metadata?.hash 
+                    ? 'Signature verification failed or chain integrity compromised'
+                    : 'No valid NASP metadata found'
+            });
+        }
+        
         res.json(result);
     } catch (e) {
-        res.status(400).json({ 
-            isValid: false, 
-            error: (e as Error).message 
+        const error = e as Error;
+        
+        // Log full error for debugging
+        console.error('Verification error:', error);
+        
+        // Return appropriate status based on error type
+        if (error.message.includes('No NASP metadata')) {
+            return res.status(400).json({
+                isValid: false,
+                error: 'No NASP metadata found in SVG'
+            });
+        }
+        
+        if (error.message.includes('Base64') || error.message.includes('JSON')) {
+            return res.status(400).json({
+                isValid: false,
+                error: 'Corrupted metadata format'
+            });
+        }
+        
+        res.status(500).json({
+            isValid: false,
+            error: 'Internal verification error'
         });
     }
+});
+
+app.get('/health', (req, res) => {
+    res.json({ status: 'ok', service: 'niftyagents-verification' });
 });
 
 const PORT = process.env.PORT || 3000;

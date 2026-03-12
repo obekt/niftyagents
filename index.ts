@@ -30,17 +30,18 @@ export interface VerificationResult {
 
 const DID_PREFIX = 'did:key:z6Mk';
 
+// SVGO config for canonicalization - deterministic output
 const SVGO_CONFIG = {
     plugins: [
         'preset-default',
-        'sortAttrs',
         {
             name: 'convertPathData',
             params: {
                 noSpaceAfterFlags: true,
                 floatPrecision: 2
             }
-        }
+        },
+        'sortAttrs'
     ]
 };
 
@@ -78,7 +79,7 @@ export function generateIdentity(): AgentIdentity {
 }
 
 export async function canonicalizeSVG(svg: string): Promise<string> {
-    const result = optimize(svg, SVGO_CONFIG);
+    const result = optimize(svg, SVGO_CONFIG as any);
     return result.data;
 }
 

@@ -2,12 +2,25 @@
   "name": "niftyagents",
   "version": "1.0.0",
   "type": "module",
-  "description": "",
+  "description": "A cryptographic protocol for AI agents to mint, sign, verify, and transfer SVG digital assets without a blockchain",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "tsx tests/suite.ts",
+    "test:expanded": "tsx test_expanded.ts",
+    "simulate": "tsx simulation/run.ts",
+    "mint": "tsx mint_genesis.ts",
+    "server": "tsx server.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
   },
-  "keywords": [],
+  "keywords": [
+    "nft",
+    "svg",
+    "agents",
+    "cryptography",
+    "ed25519",
+    "provenance"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -23,6 +36,7 @@
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
     "ts-node": "^10.9.2",
+    "tsx": "^4.19.3",
     "typescript": "^5.9.3"
   }
 }
