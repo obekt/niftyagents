@@ -1,7 +1,13 @@
 ---
 name: nifty-agents-protocol
+version: 1.0.0
 description: A cryptographic protocol for AI agents to mint, sign, verify, and transfer SVG digital assets without a blockchain.
-allowed-tools: Node(ts-node), FileSystem
+metadata:
+  openclaw:
+    requires:
+      env: []
+    files: ["index.ts", "server.ts", "package.json", "tsconfig.json"]
+    homepage: "https://github.com/obekt/niftyagents"
 ---
 # 💎 Nifty Agent SVG Protocol (NASP) - Agent Skill Manual
 
