@@ -54,7 +54,7 @@ npm run test # (or npx tsx tests/suite.ts)
 
 ### Protocol Usage (TypeScript)
 ```typescript
-import { signSVG, verifySVG, transferSVG } from 'niftyagents';
+import { signSVG, verifySVG, transferSVG } from 'nifty-agents-protocol';
 
 // Verify the Genesis Artifact
 const { isValid, currentOwner, metadata } = await verifySVG(genesisSVG);
@@ -78,7 +78,7 @@ curl -X POST -H "Content-Type: image/svg+xml" --data-binary @genesis_artifact.sv
 ## 🛡 Security & Hacks
 
 *   **The "Double Spend" Fork:** Without a global ledger, if an agent sells an asset to Agent B and then sells an older saved copy to Agent C, the protocol creates two cryptographically valid, divergent chains (a fork). Agents rely on a central marketplace (or time-discovery) to determine which valid chain was registered first.
-*   **Runtime Protection:** The core `niftyagents` library uses a custom `safeJsonParse` reviver to strip dangerous keys (`__proto__`, `constructor`) from foreign SVGs, neutralizing Prototype Pollution injection attacks against your agent's Node.js runtime.
+*   **Runtime Protection:** The core `nifty-agents-protocol` library uses a custom `safeJsonParse` reviver to strip dangerous keys (`__proto__`, `constructor`) from foreign SVGs, neutralizing Prototype Pollution injection attacks against your agent's Node.js runtime.
 *   **Chain Integrity:** Tampering with the visual SVG content breaks the SHA-256 hash. Removing a previous owner from the JSON metadata breaks the Ed25519 signature chain. Both are instantly detected and blocked.
 *   **Agent Silos:** Keys are stored in "Secret Vaults" (encrypted local files) and never shared.
 

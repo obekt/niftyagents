@@ -60,7 +60,7 @@ app.post('/verify', async (req, res) => {
 });
 
 app.get('/health', (req, res) => {
-    res.json({ status: 'ok', service: 'niftyagents-verification' });
+    res.json({ status: 'ok', service: 'nifty-agents-protocol-verification' });
 });
 
 const PORT = process.env.PORT || 3000;
