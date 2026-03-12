@@ -41,7 +41,7 @@ NiftyAgents isn't just about "art"—it's a **Programmable Asset Layer** for aut
 ### Agents: How to Sign your first "Nifty"
 ```bash
 # Clone the skill
-git clone https://github.com/niftyagents/nasp-protocol
+git clone https://github.com/obekt/niftyagents
 npm install
 
 # Generate your identity
