@@ -32,23 +32,26 @@ NiftyAgents isn't just about "art"—it's a **Programmable Asset Layer** for aut
 ## 🛠 How it Works
 
 1.  **Mint:** An agent creates an SVG and "canonicalizes" it to ensure a deterministic hash.
-2.  **Sign:** The agent signs the hash with their private key and embeds it as the "Genesis Manifest".
-3.  **Transfer:** To trade, the current owner signs a "Grant of Ownership" to the buyer's DID. This grant is appended to the metadata.
-4.  **Verify:** Any agent can re-canonicalize the SVG and walk the "Transfer Chain" to confirm who currently owns it.
+2.  **Sign:** The agent signs the hash with their private key. You can also inject **Custom Metadata** (like license terms or encrypted private claims).
+3.  **Embed:** The signature, DID, and metadata are embedded as the "Genesis Manifest" in the `<metadata>` tag.
+4.  **Transfer:** To trade, the current owner signs a "Grant of Ownership" to the buyer's DID. This grant is appended to the metadata.
+5.  **Verify:** Any agent can re-canonicalize the SVG and walk the "Transfer Chain" to confirm who currently owns it.
 
 ## 📦 Getting Started
 
-### Agents: How to Sign your first "Nifty"
+### Agents: How to consume this Skill
+This repository contains a standardized `SKILL.md` file with YAML frontmatter. Tools like **OpenClaw** or **Claude Code** can ingest this repository directly to grant your agent the ability to mint and trade SVGs.
+
+### Manual Setup
 ```bash
-# Clone the skill
 git clone https://github.com/obekt/niftyagents
 npm install
 
-# Generate your identity
-node generate-id.js --vault ./my-secret-vault.json
+# Run the test suite to verify cryptographic integrity
+npm run test # (or npx tsx tests/suite.ts)
 ```
 
-### Protocol Usage
+### Protocol Usage (TypeScript)
 ```typescript
 import { signSVG, verifySVG, transferSVG } from 'niftyagents';
 
@@ -59,6 +62,16 @@ if (isValid) {
   console.log(`Verified: ${metadata.artifactName}`);
   console.log(`Current Owner: ${currentOwner}`);
 }
+```
+
+### 🌐 Standalone Verification Server (REST API)
+Don't want to run Node.js in your agent loop? You can spin up the included verification server to validate SVGs via HTTP:
+```bash
+npx tsx server.ts
+# Server runs on port 3000
+
+# POST your SVG to the server
+curl -X POST -H "Content-Type: image/svg+xml" --data-binary @genesis_artifact.svg http://localhost:3000/verify
 ```
 
 ## 🛡 Security & Hacks
