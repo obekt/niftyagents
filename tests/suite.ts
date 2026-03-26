@@ -1,4 +1,4 @@
-import { generateIdentity, signSVG, verifySVG, transferSVG, canonicalizeSVG } from '../index.js';
+import { generateIdentity, signSVG, verifySVG, transferSVG, endorseSVG, computeTrustScore, canonicalizeSVG } from '../index.js';
 import { test, expect, summarize } from './runner.js';
 
 async function runSuite() {
@@ -106,6 +106,114 @@ async function runSuite() {
             // Expected catch for corrupted base64 or JSON
             expect(true, "Successfully caught corrupted metadata format");
         }
+    }));
+
+    // --- Category 5: TTL Expiry ---
+    results.push(await test("TTL - Expired Certificate", async () => {
+        const id = generateIdentity();
+        const svg = await signSVG(`<svg><text>Ephemeral</text></svg>`, id, {
+            expiresAt: "2020-01-01T00:00:00Z"  // Already expired
+        });
+        const v = await verifySVG(svg);
+        expect(!v.isValid, "Expired cert must not be valid");
+        expect(v.isExpired, "Must be marked as expired");
+    }));
+
+    results.push(await test("TTL - Future Expiry Still Valid", async () => {
+        const id = generateIdentity();
+        const svg = await signSVG(`<svg><text>Long-lived</text></svg>`, id, {
+            expiresAt: "2099-12-31T23:59:59Z"
+        });
+        const v = await verifySVG(svg);
+        expect(v.isValid, "Future-expiry cert must be valid");
+        expect(!v.isExpired, "Must not be marked as expired");
+    }));
+
+    results.push(await test("TTL - No Expiry Means Permanent", async () => {
+        const id = generateIdentity();
+        const svg = await signSVG(`<svg><text>Forever</text></svg>`, id);
+        const v = await verifySVG(svg);
+        expect(v.isValid, "No-expiry cert must be valid");
+        expect(!v.isExpired, "Must not be marked as expired");
+    }));
+
+    // --- Category 6: Endorsements ---
+    results.push(await test("Endorsement - Single Endorser", async () => {
+        const creator = generateIdentity();
+        const endorser = generateIdentity();
+        let svg = await signSVG(`<svg><text>Trustworthy</text></svg>`, creator);
+        svg = await endorseSVG(svg, endorser, "general");
+        const v = await verifySVG(svg);
+        expect(v.isValid, "Endorsed cert must be valid");
+        expect(v.endorsements.length === 1, "Must have 1 endorsement");
+        expect(v.endorsements[0].endorserDID === endorser.did, "Endorser DID must match");
+    }));
+
+    results.push(await test("Endorsement - Multiple Endorsers Build Trust", async () => {
+        const creator = generateIdentity();
+        const endorsers = Array.from({ length: 5 }, () => generateIdentity());
+        let svg = await signSVG(`<svg><text>Trusted</text></svg>`, creator);
+        for (const e of endorsers) {
+            svg = await endorseSVG(svg, e, "security");
+        }
+        const v = await verifySVG(svg);
+        expect(v.endorsements.length === 5, "Must have 5 endorsements");
+        const score = computeTrustScore(v.endorsements, creator.did, "security");
+        expect(score > 0.8, `Trust score must be high (got ${score.toFixed(2)})`);
+    }));
+
+    results.push(await test("Endorsement - Forged Endorsement Rejected", async () => {
+        const creator = generateIdentity();
+        const endorser = generateIdentity();
+        let svg = await signSVG(`<svg><text>Test</text></svg>`, creator);
+        svg = await endorseSVG(svg, endorser, "general");
+
+        // Tamper: swap endorser DID but keep old signature
+        const fake = generateIdentity();
+        const metaMatch = svg.match(/<metadata>nasp:(.*?)<\/metadata>/)!;
+        const manifest = JSON.parse(Buffer.from(metaMatch[1], 'base64').toString());
+        manifest.endorsements[0].endorserDID = fake.did;
+        const tamperedBase64 = Buffer.from(JSON.stringify(manifest)).toString('base64');
+        const tampered = svg.replace(metaMatch[1], tamperedBase64);
+
+        const v = await verifySVG(tampered);
+        expect(v.endorsements.length === 0, "Forged endorsement must be rejected");
+    }));
+
+    results.push(await test("Trust Score - Zero Without Endorsements", async () => {
+        const score = computeTrustScore([], "did:key:z6MkNobody");
+        expect(score === 0, "Must be 0 with no endorsements");
+    }));
+
+    // --- Category 7: Backward Compatibility ---
+    results.push(await test("Compat - v1.0 Certs Still Verify", async () => {
+        // Simulate a v1.0 cert (no endorsements, no expiresAt)
+        const id = generateIdentity();
+        let svg = `<svg><text>Legacy</text></svg>`;
+        const cleanSVG = svg.replace(/\s*<metadata>[\s\S]*?<\/metadata>\s*/g, '');
+        const { canonicalizeSVG: canon, computeHash: hash } = await import('../index.js');
+        const canonical = await canon(cleanSVG);
+        const h = hash(canonical);
+
+        // Build a v1.0-style manifest (no endorsements/expiresAt fields)
+        const nacl = (await import('tweetnacl')).default;
+        const naclUtil = (await import('tweetnacl-util')).default;
+        const sig = nacl.sign.detached(naclUtil.decodeUTF8(h), id.secretKey);
+        const base64Mod = (await import('base64-js')).default;
+        const manifest = {
+            version: "1.0",
+            creator: id.did,
+            hash: h,
+            signature: base64Mod.fromByteArray(sig),
+            transfers: []
+        };
+        const manifestB64 = base64Mod.fromByteArray(naclUtil.decodeUTF8(JSON.stringify(manifest)));
+        svg = `<svg>\n<metadata>nasp:${manifestB64}</metadata><text>Legacy</text></svg>`;
+
+        const v = await verifySVG(svg);
+        expect(v.isValid, "v1.0 cert must still verify in v1.1");
+        expect(v.endorsements.length === 0, "v1.0 cert has no endorsements");
+        expect(!v.isExpired, "v1.0 cert has no expiry");
     }));
 
     summarize(results);

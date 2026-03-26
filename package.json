@@ -1,6 +1,6 @@
 {
   "name": "nifty-agents-protocol",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "type": "module",
   "description": "A cryptographic protocol for AI agents to mint, sign, verify, and transfer SVG digital assets without a blockchain",
   "main": "index.js",

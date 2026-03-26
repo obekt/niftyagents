@@ -18,11 +18,21 @@ export interface PrivateClaim {
     encryptedData: string; // Base64
 }
 
+export interface Endorsement {
+    endorserDID: string;
+    targetDID: string;
+    scope: string;        // e.g. "general", "security", "code"
+    timestamp: string;
+    signature: string;    // endorser signs: endorse:{targetDID}:{scope}:{timestamp}
+}
+
 export interface VerificationResult {
     isValid: boolean;
+    isExpired: boolean;
     creator: string;
     currentOwner: string;
     chain: string[];
+    endorsements: Endorsement[];
     metadata: any;
 }
 
@@ -98,11 +108,13 @@ export async function signSVG(svg: string, identity: AgentIdentity, extraMetadat
     const signature = nacl.sign.detached(decodeUTF8(hash), identity.secretKey);
     
     const manifest = {
-        version: "1.0",
+        version: "1.1",
         creator: identity.did,
         hash: hash,
         signature: toBase64(signature),
         transfers: [],
+        endorsements: [],
+        expiresAt: extraMetadata.expiresAt || null,
         ...extraMetadata
     };
 
@@ -130,9 +142,12 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
     const canonical = await canonicalizeSVG(cleanSVG);
     const hash = computeHash(canonical);
 
-    if (hash !== manifest.hash) {
-        return { isValid: false, creator: manifest.creator, currentOwner: '', chain: [], metadata: manifest };
-    }
+    const fail = (owner = ''): VerificationResult => ({
+        isValid: false, isExpired: false, creator: manifest.creator,
+        currentOwner: owner, chain: [], endorsements: [], metadata: manifest
+    });
+
+    if (hash !== manifest.hash) return fail();
 
     // Verify Creator Signature
     const creatorPubKey = fromBase64(manifest.creator.replace(DID_PREFIX, ''));
@@ -142,9 +157,10 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
         creatorPubKey
     );
 
-    if (!isValidCreator) {
-        return { isValid: false, creator: manifest.creator, currentOwner: '', chain: [], metadata: manifest };
-    }
+    if (!isValidCreator) return fail();
+
+    // Check TTL expiry
+    const isExpired = manifest.expiresAt ? new Date(manifest.expiresAt) < new Date() : false;
 
     // Verify Transfer Chain
     let currentOwner = manifest.creator;
@@ -153,7 +169,7 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
     for (const transfer of manifest.transfers) {
         const ownerPubKey = fromBase64(currentOwner.replace(DID_PREFIX, ''));
         const transferPayload = `${hash}:${transfer.to}:${transfer.timestamp}`;
-        
+
         const isValidTransfer = nacl.sign.detached.verify(
             decodeUTF8(transferPayload),
             fromBase64(transfer.signature),
@@ -161,17 +177,38 @@ export async function verifySVG(svg: string): Promise<VerificationResult> {
         );
 
         if (!isValidTransfer) {
-            return { isValid: false, creator: manifest.creator, currentOwner, chain, metadata: manifest };
+            return { ...fail(currentOwner), chain };
         }
         currentOwner = transfer.to;
         chain.push(currentOwner);
     }
 
+    // Verify Endorsements
+    const validEndorsements: Endorsement[] = [];
+    for (const endorsement of (manifest.endorsements || [])) {
+        try {
+            const endorserPubKey = fromBase64(endorsement.endorserDID.replace(DID_PREFIX, ''));
+            const payload = `endorse:${endorsement.targetDID}:${endorsement.scope}:${endorsement.timestamp}`;
+            const isValidEndorsement = nacl.sign.detached.verify(
+                decodeUTF8(payload),
+                fromBase64(endorsement.signature),
+                endorserPubKey
+            );
+            if (isValidEndorsement) {
+                validEndorsements.push(endorsement);
+            }
+        } catch {
+            // Skip malformed endorsements
+        }
+    }
+
     return {
-        isValid: true,
+        isValid: !isExpired,
+        isExpired,
         creator: manifest.creator,
         currentOwner,
         chain,
+        endorsements: validEndorsements,
         metadata: manifest
     };
 }
@@ -199,4 +236,43 @@ export async function transferSVG(svg: string, fromIdentity: AgentIdentity, toDI
 
     const newManifestBase64 = base64.fromByteArray(decodeUTF8(JSON.stringify(manifest)));
     return svg.replace(/<metadata>nasp:(.*?)<\/metadata>/, `<metadata>nasp:${newManifestBase64}</metadata>`);
+}
+
+/**
+ * Adds a cryptographic endorsement to a certificate.
+ * Any agent can endorse the creator, building a web of trust.
+ */
+export async function endorseSVG(svg: string, endorserIdentity: AgentIdentity, scope: string = 'general'): Promise<string> {
+    const metadataMatch = svg.match(/<metadata>nasp:(.*?)<\/metadata>/);
+    if (!metadataMatch) throw new Error('No NASP metadata found');
+
+    const manifest = safeJsonParse(encodeUTF8(fromBase64(metadataMatch[1])));
+    const targetDID = manifest.creator;
+    const timestamp = new Date().toISOString();
+    const payload = `endorse:${targetDID}:${scope}:${timestamp}`;
+    const signature = nacl.sign.detached(decodeUTF8(payload), endorserIdentity.secretKey);
+
+    if (!manifest.endorsements) manifest.endorsements = [];
+    manifest.endorsements.push({
+        endorserDID: endorserIdentity.did,
+        targetDID,
+        scope,
+        timestamp,
+        signature: toBase64(signature)
+    });
+
+    const newManifestBase64 = base64.fromByteArray(decodeUTF8(JSON.stringify(manifest)));
+    return svg.replace(/<metadata>nasp:(.*?)<\/metadata>/, `<metadata>nasp:${newManifestBase64}</metadata>`);
+}
+
+/**
+ * Computes a trust score for a DID based on endorsements.
+ * More unique endorsers = higher trust (diminishing returns).
+ */
+export function computeTrustScore(endorsements: Endorsement[], targetDID: string, scope?: string): number {
+    const relevant = endorsements.filter(e =>
+        e.targetDID === targetDID && (!scope || e.scope === scope || e.scope === 'general')
+    );
+    const uniqueEndorsers = new Set(relevant.map(e => e.endorserDID));
+    return uniqueEndorsers.size === 0 ? 0 : 1 - (1 / (1 + uniqueEndorsers.size));
 }
